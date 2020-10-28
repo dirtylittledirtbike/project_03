@@ -77,7 +77,7 @@ with open('pickle_files/nmf_model.pickle', 'rb') as file:
 tfidf_feature_names = tfdif_vectorizer.get_feature_names()
 n_top_words = 500
 all_topic_words = get_topic_words(nmf, tfidf_feature_names, n_top_words)
-df, cov = get_word_covariance(tfdif_vectorizer, nb, n=500, top=True)
+df, cov = get_word_covariance(tfdif_vectorizer, nb, n=50, top=True)
 
 # generate table to display values
 def generate_table(dataframe, max_rows=10):
@@ -108,6 +108,22 @@ app.layout = html.Div([
                                                        {'label': k, 'value': k} for k in df.index.to_list()
                                                        ],
                                               ),
+                                 
+                                 html.Label('Topic:'),
+                                 dcc.Dropdown(id='topic', value='0',
+                                              options=[
+                                                       {'label': '0', 'value': '0'},
+                                                       {'label': '1', 'value': '1'},
+                                                       {'label': '2', 'value': '2'},
+                                                       {'label': '3', 'value': '3'},
+                                                       {'label': '4', 'value': '4'},
+                                                       {'label': '5', 'value': '5'},
+#                                                       {'label': '6', 'value': '6'},
+#                                                       {'label': '7', 'value': '7'},
+#                                                       {'label': '8', 'value': '8'},
+#                                                       {'label': '9', 'value': '9'}
+                                                       ]
+                                              ),
                                 
                                 ],style={'width':'30%', 'height':'auto', 'display':'grid', 'width':'40%'}),
                        html.Br(),
@@ -119,25 +135,54 @@ app.layout = html.Div([
 
 @app.callback(
               dash.dependencies.Output('dd-output-container', 'children'),
-              [dash.dependencies.Input('demo-dropdown', 'value')])
-def update_output(value):
+              [dash.dependencies.Input('demo-dropdown', 'value'),dash.dependencies.Input('topic', 'value')])
+def update_output(word,topic):
     
-    df = pd.DataFrame(get_topic_matches(value))
-    df.columns = ['topic', 'document text']
+
     
     # this is going to be for visualizing the graph
-    topics = 10
-    cols = ['topic' + str(i) for i in range(topics)]
-    topic_df = pd.DataFrame(nmf.components_, index=cols, columns=tfdif_vectorizer.get_feature_names()).T
-    neg, pos = get_class_features(tfdif_vectorizer, nb, n=20, top=True)
-    topic_formatted = topic_df.T[pos].T
-    topic_formatted.head()
+#    topics = 10
+#    cols = ['topic' + str(i) for i in range(topics)]
+#    topic_df = pd.DataFrame(nmf.components_, index=cols, columns=tfdif_vectorizer.get_feature_names()).T
+#    neg, pos = get_class_features(tfdif_vectorizer, nb, n=100, top=True)
+#    topic_formatted = topic_df.T[pos].T
+#    topic_formatted.head()
+
     
+    topic_matches = get_topic_matches(word)
+    if topic_matches:
+        df = pd.DataFrame(topic_matches)
+        df.columns = ['topic', 'document text']
+        
+        cols = ['topic' + str(i) for i in range(6)]
+        topic_df = pd.DataFrame(nmf.components_, index=cols, columns=tfdif_vectorizer.get_feature_names()).T
+        neg, pos = get_class_features(tfdif_vectorizer, nb, n=25, top=True)
+        all_words = list(set(list(neg) + list(pos)))
+
+        topic_formatted = topic_df.T[all_words].T.reset_index()
+        topic_formatted.rename(columns={'index':'word'},inplace=True)
+        
+        def predict_label(word):
+            word_formatted = word.split()
+            vectorized_word = tfdif_vectorizer.transform(word_formatted)
+            return nb.predict(vectorized_word)[0]
+        
+        # get predicted label from trained model so we can color graph
+        topic_formatted['toxic'] = topic_formatted.word.apply(lambda x: predict_label(x))
+
+        topic_col = 'topic'+str(topic)
+        filtered_topics = topic_formatted.sort_values(by=[topic_col], ascending=False).head(20)
+
+        fig = px.bar(y=filtered_topics.word,
+                     x=filtered_topics[topic_col],
+                     color=filtered_topics.toxic,
+                     orientation='h',
+                     width=500,
+                     height=500)
+        
+        fig.update(layout_coloraxis_showscale=False)
     
-    data_canada = px.data.gapminder().query("country == 'Canada'")
-    fig = px.bar(data_canada, x='year', y='pop', width=600, height=500)
-    
-    return generate_table(df),dcc.Graph(id='output-graph', figure=fig)
+        return generate_table(df),dcc.Graph(id='output-graph', figure=fig)
 
 
 if __name__ == '__main__':
